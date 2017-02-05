@@ -45,6 +45,17 @@ def main(reactor):
     print("received body ({} bytes)".format(len(body)))
     print("{}\n[...]\n{}\n".format(body[:200], body[-200:]))
 
+    # SOCKSPort is 'really' a list of SOCKS ports in Tor now, so we
+    # have to set it to a list ... :/
+    print("Changing our config (SOCKSPort=9876)")
+    #tor.config.SOCKSPort = ['unix:/tmp/foo/bar']
+    tor.config.SOCKSPort = ['9876']
+    yield tor.config.save()
+
+    print("Querying to see it changed:")
+    socksport = yield tor.protocol.get_conf("SOCKSPort")
+    print("SOCKSPort", socksport)
+
 
 if __name__ == '__main__':
     react(main)

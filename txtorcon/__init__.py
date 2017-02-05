@@ -43,6 +43,8 @@ from txtorcon.onion import FilesystemHiddenService
 from txtorcon.onion import AuthenticatedHiddenService
 
 
+from txtorcon.torconfig import launch_tor  # this one depreceated, use launch()
+from txtorcon.controller import launch  # this is "newer" one
 from txtorcon.torinfo import TorInfo
 from txtorcon.addrmap import AddrMap
 from txtorcon.endpoints import TorOnionAddress
@@ -73,6 +75,8 @@ HiddenService = FilesystemHiddenService  # backwards-compat; plz deprecate!
 
 
 __all__ = [
+    "connect", "launch",  # connect, launch return instance of Tor()...
+    "Tor",                # ...which is the preferred high-level API
     "Router",
     "Circuit",
     "Stream",

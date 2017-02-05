@@ -36,6 +36,7 @@ from .onion import FilesystemOnionService, EphemeralOnionService
 from .util import SingleObserver
 FilesystemHiddenService = FilesystemOnionService  # XXX
 EphemeralHiddenService = EphemeralOnionService  # XXX
+from .torconfig import TorConfig, launch_tor
 
 
 _global_tor = None  # instance of txtorcon.controller.Tor
@@ -834,25 +835,29 @@ class TorClientEndpoint(object):
         # auth)
         self._socks_username = socks_username
         self._socks_password = socks_password
+        self._when_address = SingleObserver()
 
-        # what if we make a "try a bunch of things" endpoint, and just
-        # set it here -- so that *our* .connect() can just be the
-        # 2-line thing I have here before.
+    def _get_address(self):
+        """
+        internal helper.
 
-        # FIXME playing
-        self.tor_socks_ep = TorSocksEndpoint(
-            self._socks_endpoint, self.host, self.port, self._tls,
-        )
+        *le sigh*. This is basically just to support
+        TorCircuitEndpoint; see TorSocksEndpoint._get_address(). There
+        shouldn't be any need for "actual users" to need this!
 
-    # this is the one from the "original" release-1.x branch, i think?
+        This returns a Deferred that fires once:
+          - we have an underlying SOCKS5 endpoint
+          - ...and it has received a local connection (and hence the address/port)
+        """
+        return self._when_address.when_fired()
+
     @defer.inlineCallbacks
     def connect(self, protocolfactory):
         last_error = None
-        kwargs = dict()
-        # XXX fix in socks.py stuff
-        if self._socks_username is not None and self._socks_password is not None:
-            kwargs['methods'] = dict(
-                login=(self._socks_username, self._socks_password),
+        # XXX fix in socks.py stuff for socks_username, socks_password
+        if self._socks_username or self._socks_password:
+            raise RuntimeError(
+                "txtorcon socks support doesn't yet do username/password"
             )
         if self._socks_endpoint is not None:
             socks_ep = TorSocksEndpoint(
@@ -860,6 +865,8 @@ class TorClientEndpoint(object):
                 self.host, self.port,
                 self._tls,
             )
+            # forward the address to any listeners we have
+            socks_ep._get_address().addCallback(self._when_address.fire)
             proto = yield socks_ep.connect(protocolfactory)
             defer.returnValue(proto)
         else:
@@ -870,6 +877,8 @@ class TorClientEndpoint(object):
                     socks_port,
                 )
                 socks_ep = TorSocksEndpoint(tor_ep, self.host, self.port, self._tls)
+                # forward the address to any listeners we have
+                socks_ep._get_address().addCallback(self._when_address.fire)
                 try:
                     proto = yield socks_ep.connect(protocolfactory)
                     defer.returnValue(proto)

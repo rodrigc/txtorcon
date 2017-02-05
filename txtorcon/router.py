@@ -84,7 +84,14 @@ class Router(object):
 
     @property
     def modified(self):
-        # UTC
+        """
+        This is the time of 'the publication time of its most recent
+        descriptor' (in UTC).
+
+        See also dir-spec.txt.
+
+        """
+        # "... in the form YYYY-MM-DD HH:MM:SS, in UTC"
         if self._modified is None:
             self._modified = datetime.strptime(
                 self._modified_unparsed,

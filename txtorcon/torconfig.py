@@ -11,7 +11,9 @@ import warnings
 from io import StringIO
 from collections import OrderedDict
 
+from incremental import Version
 from twisted.python import log
+from twisted.python.deprecate import deprecated
 from twisted.internet import defer
 from twisted.internet.endpoints import TCP4ClientEndpoint, UNIXClientEndpoint
 
@@ -23,6 +25,7 @@ from txtorcon.onion import AuthenticatedHiddenService, EphemeralHiddenService
 
 
 @defer.inlineCallbacks
+@deprecated(Version("txtorcon", 0, 18, 0))
 def launch_tor(config, reactor,
                tor_binary=None,
                progress_updates=None,
@@ -32,6 +35,8 @@ def launch_tor(config, reactor,
                stdout=None, stderr=None):
     """
     Deprecated; use launch() instead.
+
+    See also controller.py
     """
     from .controller import launch
     # XXX FIXME are we dealing with options in the config "properly"
@@ -522,13 +527,6 @@ class TorConfig(object):
         if proto.post_bootstrap:
             proto.post_bootstrap.addCallback(self.bootstrap)
         return self.__dict__['post_bootstrap']
-
-    def _update_proto(self, proto):
-        """
-        internal method, used by launch_tor to update the protocol after we're
-        set up.
-        """
-        self.__dict__['_protocol'] = proto
 
     def __setattr__(self, name, value):
         """

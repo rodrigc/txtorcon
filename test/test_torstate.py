@@ -1,4 +1,4 @@
-from zope.interface import implementer
+from zope.interface import implementer, directlyProvides
 from zope.interface.verify import verifyClass
 from twisted.trial import unittest
 from twisted.test import proto_helpers
@@ -10,7 +10,7 @@ import tempfile
 
 from ipaddress import IPv4Address
 
-from mock import patch
+from mock import patch, Mock
 
 from txtorcon import TorControlProtocol
 from txtorcon import TorProtocolError
@@ -26,6 +26,8 @@ from txtorcon.interface import ICircuitListener
 from txtorcon.interface import IStreamListener
 from txtorcon.interface import StreamListenerMixin
 from txtorcon.interface import CircuitListenerMixin
+from txtorcon.torstate import _extract_reason
+from txtorcon.circuit import _get_circuit_attacher
 
 
 @implementer(ICircuitListener)
@@ -314,6 +316,13 @@ class BootstrapTests(unittest.TestCase):
         return d
 
 
+class UtilTests(unittest.TestCase):
+
+    def test_extract_reason_no_reason(self):
+        reason = _extract_reason(dict())
+        self.assertEqual("unknown", reason)
+
+
 class StateTests(unittest.TestCase):
 
     def setUp(self):
@@ -337,6 +346,11 @@ class StateTests(unittest.TestCase):
         attacher = MyAttacher()
         self.state.add_attacher(attacher, FakeReactor(self))
         self.state._stream_update("76 CLOSED 0 www.example.com:0 REASON=DONE")
+
+    def test_attacher_error_handler(self):
+        # make sure error-handling "does something" that isn't blowing up
+        with patch('sys.stdout'):
+            TorState(self.protocol)._attacher_error(Failure(RuntimeError("quote")))
 
     def test_stream_update(self):
         # we use a circuit ID of 0 so it doesn't try to look anything
@@ -525,6 +539,69 @@ class StateTests(unittest.TestCase):
             self.transport.value(),
             b'SETCONF __LeaveStreamsUnattached=1\r\nSETCONF'
             b' __LeaveStreamsUnattached=0\r\n'
+        )
+
+    def test_attacher_twice(self):
+        """
+        It should be an error to set an attacher twice
+        """
+        @implementer(IStreamAttacher)
+        class MyAttacher(object):
+            pass
+
+        attacher = MyAttacher()
+        self.state.set_attacher(attacher, FakeReactor(self))
+        # attach the *same* instance twice; not an error
+        self.state.set_attacher(attacher, FakeReactor(self))
+        with self.assertRaises(RuntimeError) as ctx:
+            self.state.set_attacher(MyAttacher(), FakeReactor(self))
+        self.assertTrue(
+            "already have an attacher" in str(ctx.exception)
+        )
+
+    @defer.inlineCallbacks
+    def _test_attacher_both_apis(self):
+        """
+        similar to above, but first set_attacher is implicit via
+        Circuit.stream_via
+        """
+        reactor = Mock()
+        directlyProvides(reactor, IReactorCore)
+
+        @implementer(IStreamAttacher)
+        class MyAttacher(object):
+            pass
+
+        circ = Circuit(self.state)
+        circ.state = 'BUILT'
+
+        # use the "preferred" API, which will set an attacher
+        factory = Mock()
+        proto = Mock()
+        proto.when_done = Mock(return_value=defer.succeed(None))
+        factory.connect = Mock(return_value=defer.succeed(proto))
+        ep = circ.stream_via(reactor, 'meejah.ca', 443, factory)
+        addr = Mock()
+        addr.host = '10.0.0.1'
+        addr.port = 1011
+        ep._target_endpoint._get_address = Mock(return_value=defer.succeed(addr))
+        print("EP", ep)
+        attacher = yield _get_circuit_attacher(reactor, self.state)
+        print("attacher", attacher)
+        d = ep.connect('foo')
+        print("doin' it")
+        stream = Mock()
+        import ipaddress
+        stream.source_addr = ipaddress.IPv4Address(u'10.0.0.1')
+        stream.source_port = 1011
+        attacher.attach_stream(stream, [])
+        yield d
+
+        # ...now use the low-level API (should be an error)
+        with self.assertRaises(RuntimeError) as ctx:
+            self.state.set_attacher(MyAttacher(), FakeReactor(self))
+        self.assertTrue(
+            "already have an attacher" in str(ctx.exception)
         )
 
     def test_attacher(self):

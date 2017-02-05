@@ -24,7 +24,8 @@ from txtorcon.router import Router, hashFromHexId
 from txtorcon.addrmap import AddrMap
 from txtorcon.torcontrolprotocol import parse_keywords
 from txtorcon.log import txtorlog
-from txtorcon.torcontrolprotocol import TorProtocolError, TorProtocolFactory
+from txtorcon.torcontrolprotocol import TorProtocolError
+from txtorcon.torcontrolprotocol import TorProtocolFactory
 
 from txtorcon.interface import ITorControlProtocol
 from txtorcon.interface import IRouterContainer
@@ -231,7 +232,7 @@ class TorState(object):
         self.circuit_factory = Circuit
         self.stream_factory = Stream
 
-        self._attachers = []
+        self._attacher = None
         """If set, provides
         :class:`txtorcon.interface.IStreamAttacher` to attach new
         streams we hear about."""
@@ -487,58 +488,47 @@ class TorState(object):
 
         return self.protocol.set_conf("__LeaveStreamsUnattached", 0)
 
-    # XXX still not completely sold on this API-change -- I think
-    # perhaps set_attacher() was the right API, but then the
-    # circuit.stream_via() stuff messes with that. So we might just
-    # need to "always" set ourselves up as stream-attacher ("in case"
-    # someone calls stream_via()) if only so we don't keep toggling it
-    # on/off ...?
-    def add_attacher(self, attacher, myreactor):
+    def set_attacher(self, attacher, myreactor):
         """
         Provide an :class:`txtorcon.interface.IStreamAttacher` to
-        associate streams to circuits. This won't get turned on until
-        after bootstrapping is completed. ('__LeaveStreamsUnattached'
-        needs to be set to '1' and the existing circuits list needs to
-        be populated).
+        associate streams to circuits.
 
-        attachers are called in the order they're added until one of
-        them returns non-None. If all attachers return None, we just
-        ask Tor to attach the stream. If you don't want to attach the
-        stream at all (e.g. reject it) then call
-        :meth:`txtorcon.Stream.close` on the stream.
+        You are Strongly Encouraged to **not** use this API directly,
+        and instead use :meth:`txtorcon.Circuit.stream_via` or
+        :meth:`txtorcon.Circuit.web_agent` instead. If you do need to
+        use this API, it's an error if you call either of the other
+        two methods.
+
+        This won't get turned on until after bootstrapping is
+        completed. ('__LeaveStreamsUnattached' needs to be set to '1'
+        and the existing circuits list needs to be populated).
         """
 
         react = IReactorCore(myreactor)
-        if len(self._attachers) == 0:
-            d = self.protocol.set_conf("__LeaveStreamsUnattached", "1")
-            self._cleanup = react.addSystemEventTrigger(
-                'before', 'shutdown',
-                self._undo_attacher,
-            )
+        if attacher:
+            if self._attacher is attacher:
+                return
+            if self._attacher is not None:
+                raise RuntimeError(
+                    "set_attacher called but we already have an attacher"
+                )
+            self._attacher = IStreamAttacher(attacher)
         else:
-            d = defer.succeed(None)
-        self._attachers.append(IStreamAttacher(attacher))
-        return d
+            self._attacher = None
 
-    def remove_attacher(self, attacher, myreactor):
-        """
-        Returns a Deferred that fires when we've successfully removed the
-        give attacher.
-
-        Note: this must be async becase we may have to issue cleanup
-        commands to Tor if this is the last attacher.
-
-        XXX probably just put reactor arg into TorState ctor?
-        """
-        react = IReactorCore(myreactor)
-        self._attachers.remove(attacher)
-        if not self._attachers:
-            d = self._undo_attacher()
+        if self._attacher is None:
+            d = self.undo_attacher()
             if self._cleanup:
                 react.removeSystemEventTrigger(self._cleanup)
                 self._cleanup = None
-            return d
-        return defer.succeed(None)
+
+        else:
+            d = self.protocol.set_conf("__LeaveStreamsUnattached", "1")
+            self._cleanup = react.addSystemEventTrigger(
+                'before', 'shutdown',
+                self.undo_attacher,
+            )
+        return d
 
     # noqa
     stream_close_reasons = {
@@ -775,8 +765,8 @@ class TorState(object):
         (neither attaching it, nor telling Tor to attach it).
         """
 
-        if not self._attachers:
-            defer.returnValue(None)
+        if self._attacher is None:
+            return None
 
         if stream.target_host is not None \
            and '.exit' in stream.target_host:
@@ -788,24 +778,10 @@ class TorState(object):
             return
 
         # handle async or sync .attach() the same
-        circ = None
-        res = None
-        used_attacher = None
-        for attacher in self._attachers:
-            circ_d = defer.maybeDeferred(
-                attacher.attach_stream,
-                stream, self.circuits,
-            )
-            try:
-                res = yield circ_d
-                used_attacher = attacher
-            except Exception:
-                attacher.attach_stream_failure(stream, Failure())
-                res = None
-
-            if res is not None:
-                circ = res  # could be DO_NOT_ATTACH
-                break
+        circ_d = defer.maybeDeferred(
+            self._attacher.attach_stream,
+            stream, self.circuits,
+        )
 
         # actually do the attachment logic; .attach() can return 3 things:
         #    1. None: let Tor do whatever it wants

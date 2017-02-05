@@ -204,7 +204,7 @@ def launch(reactor,
     except KeyError:
         pass
     else:
-        if sys.platform in ('linux2', 'darwin') and os.geteuid() == 0:
+        if sys.platform in ('linux', 'linux2', 'darwin') and os.geteuid() == 0:
             os.chown(data_directory, pwd.getpwnam(our_user).pw_uid, -1)
 
     # user can pass in a control port, or we set one up here
@@ -880,7 +880,7 @@ class TorProcessProtocol(protocol.ProcessProtocol):
 # this Deferred into the notifications -- BUT we might try again, so
 # we need to know "have we given up -- had an error" and only in that
 # case send to the connected things. I think?
-##            d.addCallback(self._maybe_notify_connected)
+#            d.addCallback(self._maybe_notify_connected)
 
     def _timeout_expired(self):
         """
