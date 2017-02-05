@@ -701,7 +701,7 @@ class StateTests(unittest.TestCase):
         self.assertEqual(self.protocol.commands[0][1], b'ATTACHSTREAM 1 1')
 
     @defer.inlineCallbacks
-    def _test_attacher_errors(self):
+    def test_attacher_errors(self):
         @implementer(IStreamAttacher)
         class MyAttacher(object):
 
@@ -718,33 +718,34 @@ class StateTests(unittest.TestCase):
 
         self.state.circuits[1] = FakeCircuit(1)
         attacher = MyAttacher(FakeCircuit(2))
-        self.state.set_attacher(attacher, FakeReactor(self))
+        d = self.state.set_attacher(attacher, FakeReactor(self))
+        self.protocol.lineReceived(b'200 OK\r\n')
+        yield d
 
         stream = Stream(self.state)
         stream.id = 3
         msg = ''
-        try:
-            yield self.state._maybe_attach(stream)
-        except Exception as e:
-            msg = str(e)
-            print("MSG", msg)
+        d = self.state._maybe_attach(stream)
+        self.assertEqual(1, len(attacher.fails))
+        self.protocol.lineReceived(b'200 OK\r\n')
+        yield d
+        msg = str(attacher.fails[-1])
         self.assertTrue('circuit unknown' in msg)
 
         attacher.answer = self.state.circuits[1]
         msg = ''
-        try:
-            yield self.state._maybe_attach(stream)
-        except Exception as e:
-            msg = str(e)
-        self.assertTrue('only attach to BUILT' in msg)
+        d = self.state._maybe_attach(stream)
+        self.protocol.lineReceived(b'200 OK\r\n')
+        yield d
+        self.assertEqual(2, len(attacher.fails))
+        self.assertTrue('only attach to BUILT' in str(attacher.fails[-1]))
 
         attacher.answer = 'not a Circuit instance'
         msg = ''
-        try:
-            yield self.state._maybe_attach(stream)
-        except Exception as e:
-            msg = str(e)
-        self.assertTrue('Circuit instance' in msg)
+        d = self.state._maybe_attach(stream)
+        self.protocol.lineReceived(b'200 OK\r\n')
+        self.assertEqual(3, len(attacher.fails))
+        self.assertTrue('Circuit instance' in str(attacher.fails[-1]))
 
     def test_attacher_no_attach(self):
         @implementer(IStreamAttacher)
