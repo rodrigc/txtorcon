@@ -97,17 +97,6 @@ class IStreamAttacher(Interface):
     :class:`txtorcon.Circuit` it should be attached to.
     """
 
-    def attach_stream_failure(stream, fail):
-        """
-        :param stream:
-            The stream we were trying to attach.
-
-        :param fail:
-            A Failure instance.
-
-        A failure has occurred while trying to attach the stream.
-        """
-
     def attach_stream(stream, circuits):
         """
         :param stream:
@@ -138,12 +127,6 @@ class IStreamAttacher(Interface):
         Note also that although you get a request to attach a stream
         that ends in .onion Tor doesn't currently let you specify how
         to attach .onion addresses and will always give a 551 error.
-        """
-
-    def attach_stream_failure(stream, fail):
-        """
-        If we get any errors while attaching a stream, this method is
-        called with a `Failure` instance.
         """
 
 

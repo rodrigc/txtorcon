@@ -1,4 +1,6 @@
 import os
+import tempfile
+import shutil
 
 from mock import patch
 from mock import Mock, MagicMock
@@ -122,7 +124,7 @@ class EndpointTests(unittest.TestCase):
             pass
 
     @defer.inlineCallbacks
-    def test_illegal_torconfig_instance(self):
+    def test_illegal_torconfig_instance(self, ftb):
 
         class NotTorConfig(object):
             "Definitely not a TorConfig"
@@ -134,7 +136,7 @@ class EndpointTests(unittest.TestCase):
             yield ep.listen(Mock())
         self.assertTrue('TorConfig instance' in str(ctx.exception))
 
-    def test_inconsistent_options_two_auths(self):
+    def test_inconsistent_options_two_auths(self, ftb):
         with self.assertRaises(ValueError) as ctx:
             TCPHiddenServiceEndpoint(
                 Mock(), Mock(), 80,
@@ -143,7 +145,7 @@ class EndpointTests(unittest.TestCase):
             )
         self.assertTrue("don't support stealth_auth" in str(ctx.exception))
 
-    def test_inconsistent_options_dir_and_ephemeral(self):
+    def test_inconsistent_options_dir_and_ephemeral(self, ftb):
         with self.assertRaises(ValueError) as ctx:
             TCPHiddenServiceEndpoint(
                 Mock(), Mock(), 80,
@@ -152,7 +154,7 @@ class EndpointTests(unittest.TestCase):
             )
         self.assertTrue("incompatible with", str(ctx.exception))
 
-    def test_inconsistent_options_priv_key_no_ephemeral(self):
+    def test_inconsistent_options_priv_key_no_ephemeral(self, ftb):
         with self.assertRaises(ValueError) as ctx:
             TCPHiddenServiceEndpoint(
                 Mock(), Mock(), 80,
@@ -264,7 +266,7 @@ class EndpointTests(unittest.TestCase):
         ftb.call_args[1]['progress_updates'](40, 'FOO', 'foo to the bar')
         return ep
 
-    def test_progress_updates_system_tor(self):
+    def test_progress_updates_system_tor(self, ftb):
         ep = TCPHiddenServiceEndpoint.system_tor(
             self.reactor,
             UNIXClientEndpoint(self.reactor, "/non/existant"),
@@ -297,7 +299,7 @@ class EndpointTests(unittest.TestCase):
         return ep
 
     @defer.inlineCallbacks
-    def test_multiple_listen(self):
+    def test_multiple_listen(self, ftb):
         ep = TCPHiddenServiceEndpoint(
             self.reactor, self.config, 123,
             ephemeral=False,
@@ -324,7 +326,7 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual('127.0.0.1', ep.tcp_endpoint._interface)
         self.assertEqual(len(self.config.HiddenServices), 1)
 
-    def test_multiple_listen_ephemeral(self):
+    def test_multiple_listen_ephemeral(self, ftb):
         ep = TCPHiddenServiceEndpoint(
             self.reactor, self.config, 123,
             ephemeral=True,
