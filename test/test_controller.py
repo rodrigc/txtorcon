@@ -20,7 +20,6 @@ from txtorcon import launch
 from txtorcon import connect
 from txtorcon.controller import _is_non_public_numeric_address, _Tor
 from txtorcon.interface import ITorControlProtocol
-from txtorcon.util import delete_file_or_tree
 from .util import TempDir
 
 from zope.interface import implementer, directlyProvides
